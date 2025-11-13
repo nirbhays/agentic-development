@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from openai import OpenAI
+from anthropic import Anthropic
 import json
 import os
 import requests
@@ -31,7 +31,7 @@ def record_unknown_question(question):
 record_user_details_json = {
     "name": "record_user_details",
     "description": "Use this tool to record that a user is interested in being in touch and provided an email address",
-    "parameters": {
+    "input_schema": {
         "type": "object",
         "properties": {
             "email": {
@@ -41,42 +41,38 @@ record_user_details_json = {
             "name": {
                 "type": "string",
                 "description": "The user's name, if they provided it"
-            }
-            ,
+            },
             "notes": {
                 "type": "string",
                 "description": "Any additional information about the conversation that's worth recording to give context"
             }
         },
-        "required": ["email"],
-        "additionalProperties": False
+        "required": ["email"]
     }
 }
 
 record_unknown_question_json = {
     "name": "record_unknown_question",
     "description": "Always use this tool to record any question that couldn't be answered as you didn't know the answer",
-    "parameters": {
+    "input_schema": {
         "type": "object",
         "properties": {
             "question": {
                 "type": "string",
                 "description": "The question that couldn't be answered"
-            },
+            }
         },
-        "required": ["question"],
-        "additionalProperties": False
+        "required": ["question"]
     }
 }
 
-tools = [{"type": "function", "function": record_user_details_json},
-        {"type": "function", "function": record_unknown_question_json}]
+tools = [record_user_details_json, record_unknown_question_json]
 
 
 class Me:
 
     def __init__(self):
-        self.openai = OpenAI()
+        self.anthropic = Anthropic()
         self.name = "Ed Donner"
         reader = PdfReader("me/linkedin.pdf")
         self.linkedin = ""
@@ -91,12 +87,16 @@ class Me:
     def handle_tool_call(self, tool_calls):
         results = []
         for tool_call in tool_calls:
-            tool_name = tool_call.function.name
-            arguments = json.loads(tool_call.function.arguments)
+            tool_name = tool_call.name
+            arguments = tool_call.input
             print(f"Tool called: {tool_name}", flush=True)
             tool = globals().get(tool_name)
             result = tool(**arguments) if tool else {}
-            results.append({"role": "tool","content": json.dumps(result),"tool_call_id": tool_call.id})
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": tool_call.id,
+                "content": json.dumps(result)
+            })
         return results
     
     def system_prompt(self):
@@ -113,19 +113,35 @@ If the user is engaging in discussion, try to steer them towards getting in touc
         return system_prompt
     
     def chat(self, message, history):
-        messages = [{"role": "system", "content": self.system_prompt()}] + history + [{"role": "user", "content": message}]
+        # Clean history for Anthropic format
+        cleaned_history = [{"role": h["role"], "content": h["content"]} for h in history]
+        messages = cleaned_history + [{"role": "user", "content": message}]
+        
         done = False
         while not done:
-            response = self.openai.chat.completions.create(model="gpt-4o-mini", messages=messages, tools=tools)
-            if response.choices[0].finish_reason=="tool_calls":
-                message = response.choices[0].message
-                tool_calls = message.tool_calls
+            response = self.anthropic.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1024,
+                system=self.system_prompt(),
+                messages=messages,
+                tools=tools
+            )
+            
+            if response.stop_reason == "tool_use":
+                # Find tool use blocks
+                tool_calls = [block for block in response.content if block.type == "tool_use"]
                 results = self.handle_tool_call(tool_calls)
-                messages.append(message)
-                messages.extend(results)
+                
+                # Add assistant's response to messages
+                messages.append({"role": "assistant", "content": response.content})
+                # Add tool results
+                messages.append({"role": "user", "content": results})
             else:
                 done = True
-        return response.choices[0].message.content
+        
+        # Extract text from response
+        text_content = [block.text for block in response.content if hasattr(block, 'text')]
+        return text_content[0] if text_content else ""
     
 
 if __name__ == "__main__":
