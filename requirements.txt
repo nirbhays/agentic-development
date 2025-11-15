@@ -257,8 +257,6 @@ langchain-core==0.3.64
     #   langgraph-prebuilt
 langchain-experimental==0.3.4
     # via agents (pyproject.toml)
-langchain-openai==0.3.21
-    # via agents (pyproject.toml)
 langchain-text-splitters==0.3.8
     # via langchain
 langgraph==0.4.8
@@ -336,15 +334,6 @@ numpy==2.3.0
     #   semantic-kernel
 ollama==0.5.1
     # via autogen-ext
-openai==1.85.0
-    # via
-    #   agents (pyproject.toml)
-    #   autogen-ext
-    #   langchain-openai
-    #   openai-agents
-    #   semantic-kernel
-openai-agents==0.0.17
-    # via agents (pyproject.toml)
 openapi-core==0.19.5
     # via semantic-kernel
 openapi-schema-validator==0.6.3

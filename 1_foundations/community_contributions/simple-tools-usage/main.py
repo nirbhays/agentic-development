@@ -1,9 +1,9 @@
 from dotenv import load_dotenv
-from openai import OpenAI
+from anthropic import Anthropic
 import re, json
 
 load_dotenv(override=True)
-openai = OpenAI()
+anthropic_client = Anthropic()
 
 call_to_action = "Type something to manipulate, or 'exit' to quit."
 
@@ -22,7 +22,7 @@ def manipulate_string(input_string):
 manipulate_string_json = {
     "name": "manipulate_string",
     "description": "Use this tool to reverse the characters in the text the user enters, then to capitalize the first letter of each reversed word)",
-    "parameters": {
+    "input_schema": {
         "type": "object",
         "properties": {
             "input_string": {
@@ -30,32 +30,28 @@ manipulate_string_json = {
                 "description": "The text the user enters"
             }
         },
-        "required": ["input_string"],
-        "additionalProperties": False
+        "required": ["input_string"]
     }
 }
 
-tools = [{"type": "function", "function": manipulate_string_json}]
+tools = [manipulate_string_json]
 
 TOOL_FUNCTIONS = {
     "manipulate_string": manipulate_string
 }
 
-def handle_tool_calls(tool_calls):
+def handle_tool_calls(tool_uses):
     results = []
-    for tool_call in tool_calls:
-        tool_name = tool_call.function.name
-        arguments = json.loads(tool_call.function.arguments)
+    for tool_use in tool_uses:
+        tool_name = tool_use.name
+        arguments = tool_use.input
         tool = TOOL_FUNCTIONS.get(tool_name)
         result = tool(**arguments) if tool else {}
-
-        # Remove quotes if result is a plain string
         content = result if isinstance(result, str) else json.dumps(result)
-
         results.append({
-            "role": "tool",
-            "content": content,
-            "tool_call_id": tool_call.id
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "content": content
         })
     return results
 
@@ -71,21 +67,26 @@ With this context, please chat with the user, always staying in character.
 """
 
 def chat(message, history):
-    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": message}]
-    done=False
+    cleaned_history = [{"role": h["role"], "content": h["content"]} for h in history]
+    messages = cleaned_history + [{"role": "user", "content": message}]
+    done = False
     while not done:
-        response = openai.chat.completions.create(model="gpt-4o-mini", messages=messages, tools=tools)
-        finish_reason = response.choices[0].finish_reason
-
-        if finish_reason == "tool_calls":
-            message = response.choices[0].message
-            tool_calls = message.tool_calls
-            results = handle_tool_calls(tool_calls)
-            messages.append(message)
-            messages.extend(results)
+        response = anthropic_client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=512,
+            system=system_prompt,
+            messages=messages,
+            tools=tools
+        )
+        if response.stop_reason == "tool_use":
+            tool_uses = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
+            results = handle_tool_calls(tool_uses)
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": results})
         else:
             done = True
-    return response.choices[0].message.content
+    text_blocks = [b.text for b in response.content if hasattr(b, "text")]
+    return text_blocks[0] if text_blocks else ""
 
 def main():
     print("\nWelcome to the string manipulation chat!")

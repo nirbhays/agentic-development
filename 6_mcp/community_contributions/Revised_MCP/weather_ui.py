@@ -2,32 +2,18 @@ import os
 import asyncio
 import gradio as gr
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 from agents.mcp import MCPServerStdio
-from openai import AsyncOpenAI
 from agents import (
-    Runner, 
+    Runner,
     Agent,
-    set_default_openai_client,
-    set_default_openai_api,
-    set_tracing_export_api_key,
     trace,
-    
 )
 
 
-client = AsyncOpenAI(
-    #Anthropic API key
-    api_key="my_anthropic_api_key",
-    base_url="https://api.anthropic.com/v1",
-)
+anthropic_client = AsyncAnthropic()
 
-set_default_openai_api('chat_completions')
-set_default_openai_client(client)
-set_tracing_export_api_key(os.getenv('OPENAI_API_KEY', '#openai api'))
-
-
-MODEL = "claude-haiku-4-5"
+MODEL = "claude-3-5-haiku-20241022"
 
 # params
 weather_params = {"command": "python", "args": ["server.py"]}

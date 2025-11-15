@@ -1,6 +1,6 @@
 import pathlib
 from dotenv import load_dotenv
-from openai import OpenAI
+from anthropic import Anthropic
 import json
 import os
 import requests
@@ -33,7 +33,7 @@ def record_unknown_question(question):
 record_user_details_json = {
     "name": "record_user_details",
     "description": "Use this tool to record that a user is interested in being in touch and provided an email address",
-    "parameters": {
+    "input_schema": {
         "type": "object",
         "properties": {
             "email": {
@@ -43,36 +43,32 @@ record_user_details_json = {
             "name": {
                 "type": "string",
                 "description": "The user's name, if they provided it"
-            }
-            ,
+            },
             "notes": {
                 "type": "string",
                 "description": "Any additional information about the conversation that's worth recording to give context"
             }
         },
-        "required": ["email"],
-        "additionalProperties": False
+        "required": ["email"]
     }
 }
 
 record_unknown_question_json = {
     "name": "record_unknown_question",
     "description": "Always use this tool to record any question that couldn't be answered as you didn't know the answer",
-    "parameters": {
+    "input_schema": {
         "type": "object",
         "properties": {
             "question": {
                 "type": "string",
                 "description": "The question that couldn't be answered"
-            },
+            }
         },
-        "required": ["question"],
-        "additionalProperties": False
+        "required": ["question"]
     }
 }
 
-tools = [{"type": "function", "function": record_user_details_json},
-        {"type": "function", "function": record_unknown_question_json}]
+tools = [record_user_details_json, record_unknown_question_json]
 
 
 class Me:
@@ -94,7 +90,7 @@ class Me:
         if not linkedin_pdf.exists():
             raise FileNotFoundError("\"linkedin.pdf\" does not exist.")
 
-        self.openai = OpenAI()
+        self.anthropic = Anthropic()
         self.name = name
         reader = PdfReader(f"{linkedin_pdf}")
         self.linkedin = ""
@@ -106,17 +102,21 @@ class Me:
             self.summary = f.read()
 
 
-    def handle_tool_call(self, tool_calls):
+    def handle_tool_use(self, tool_uses):
         results = []
-        for tool_call in tool_calls:
-            tool_name = tool_call.function.name
-            arguments = json.loads(tool_call.function.arguments)
+        for tool_use in tool_uses:
+            tool_name = tool_use.name
+            arguments = tool_use.input
             print(f"Tool called: {tool_name}", flush=True)
             tool = globals().get(tool_name)
             result = tool(**arguments) if tool else {}
-            results.append({"role": "tool","content": json.dumps(result),"tool_call_id": tool_call.id})
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": tool_use.id,
+                "content": json.dumps(result)
+            })
         return results
-    
+
     def system_prompt(self):
         system_prompt = f"You are acting as {self.name}. You are answering questions on {self.name}'s website, \
 particularly questions related to {self.name}'s career, background, skills and experience. \
@@ -131,19 +131,29 @@ If the user is engaging in discussion, try to steer them towards getting in touc
         return system_prompt
     
     def chat(self, message, history):
-        messages = [{"role": "system", "content": self.system_prompt()}] + history + [{"role": "user", "content": message}]
+        cleaned_history = [{"role": h["role"], "content": h["content"]} for h in history]
+        messages = cleaned_history + [{"role": "user", "content": message}]
         done = False
+        response_text = ""
         while not done:
-            response = self.openai.chat.completions.create(model="gpt-4o-mini", messages=messages, tools=tools)
-            if response.choices[0].finish_reason=="tool_calls":
-                message = response.choices[0].message
-                tool_calls = message.tool_calls
-                results = self.handle_tool_call(tool_calls)
-                messages.append(message)
-                messages.extend(results)
+            response = self.anthropic.messages.create(
+                model="claude-3-5-haiku-20241022",
+                system=self.system_prompt(),
+                messages=messages,
+                tools=tools,
+                max_tokens=512
+            )
+            if response.stop_reason == "tool_use":
+                tool_uses = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
+                results = self.handle_tool_use(tool_uses)
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": results})
             else:
                 done = True
-        return response.choices[0].message.content
+                text_blocks = [b.text for b in response.content if hasattr(b, "text")]
+                if text_blocks:
+                    response_text = text_blocks[0]
+        return response_text
     
 
 if __name__ == "__main__":
