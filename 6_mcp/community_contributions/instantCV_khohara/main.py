@@ -5,13 +5,13 @@ from agents import Agent, Runner, trace, Tool
 from agents.mcp import MCPServerStdio
 from dotenv import load_dotenv
 from IPython.display import display, Markdown
-from openai import AsyncOpenAI
+from anthropic import Anthropic
 import pdfkit
 import os
 import asyncio
 import gradio as gr
 load_dotenv(override=True)
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("ANTHROPIC_API_KEY")
 
 async def build_cv(name, email, phone, education, experience, skills):
     # Format details

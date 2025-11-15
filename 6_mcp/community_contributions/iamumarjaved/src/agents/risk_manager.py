@@ -1,7 +1,6 @@
 from contextlib import AsyncExitStack
-from agents import Agent, Runner, trace, OpenAIChatCompletionsModel
+from agents import Agent, Runner, trace
 from agents.mcp import MCPServerStdio
-from openai import AsyncOpenAI
 from dotenv import load_dotenv
 import os
 import json
@@ -16,7 +15,7 @@ load_dotenv(override=True)
 MAX_TURNS = 20
 
 class RiskManager:
-    def __init__(self, trader_names: list[str], model_name="gpt-4o-mini"):
+    def __init__(self, trader_names: list[str], model_name="claude-3-5-haiku-20241022"):
         self.trader_names = trader_names
         self.model_name = model_name
         self.agent = None

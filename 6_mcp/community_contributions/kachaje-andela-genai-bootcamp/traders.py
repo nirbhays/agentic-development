@@ -9,8 +9,7 @@ from shared import (
 )
 from accounts_client import read_accounts_resource, read_strategy_resource
 from mcp_params import trader_mcp_server_params, researcher_mcp_server_params
-from agents import Agent, Tool, Runner, OpenAIChatCompletionsModel, set_tracing_disabled
-from openai import AsyncOpenAI
+from agents import Agent, Tool, Runner, set_tracing_disabled
 from dotenv import load_dotenv
 import json
 from agents.mcp import MCPServerStdio
@@ -27,16 +26,13 @@ set_tracing_disabled(True)
 
 load_dotenv(override=True)
 
-OLLAMA_BASE_URL = "http://localhost:11434/v1"
-ollama_client = AsyncOpenAI(base_url=OLLAMA_BASE_URL, api_key="ollama")
-
 MAX_TURNS = 30
 
+DEFAULT_MODEL = "claude-3-5-haiku-20241022"
 
-def get_model(model_name: str = "llama3.2"):
-    if model_name == "ollama" or model_name == "ollama3.2":
-        model_name = "llama3.2"
-    return OpenAIChatCompletionsModel(model=model_name, openai_client=ollama_client)
+def get_model(model_name: str = DEFAULT_MODEL):
+    # Simplified: return Anthropic model string directly
+    return model_name
 
 
 async def get_researcher(mcp_servers, model_name) -> Agent:
@@ -55,7 +51,7 @@ async def get_researcher_tool(mcp_servers, model_name) -> Tool:
 
 
 class Trader:
-    def __init__(self, name: str, lastname="Trader", model_name="llama3.2"):
+    def __init__(self, name: str, lastname="Trader", model_name=DEFAULT_MODEL):
         self.name = name
         self.lastname = lastname
         self.agent = None
